@@ -14,6 +14,8 @@ pub enum MyProgramError {
     InvalidAccount,
     //Unable to Deserialize
     DeserializationFailed,
+    //Unable to Serialize
+    SerializationFailed,
     FailedRealloc,
 }
 
