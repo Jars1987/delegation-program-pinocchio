@@ -133,7 +133,8 @@ pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult 
 
     //seriliaze the args
     let mut data: Vec<u8> = vec![0u8; 8];
-    let serialized_seeds = args.try_to_vec()?;
+    let serialized_seeds = borsh::to_vec(&delegate_args)
+    .map_err(|e| MyProgramError::SerializationFailed)?;
     data.extend_from_slice(&serialized_seeds);
 
     //call Instruction
