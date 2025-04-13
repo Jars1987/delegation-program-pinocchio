@@ -10,12 +10,8 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 
-// Since instruction module is private, we need to define this constant here
 const DELEGATION_ACCOUNT: Pubkey = pubkey!("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 const ID: Pubkey = pubkey!("A24MN2mj3aBpDLRhY6FonnbTuayv7oRqhva2R2hUuyqx");
-
-// This is a more advanced test that attempts to fully test the delegate functionality
-// including the cross-program invocation (CPI) to the delegation account program
 
 // Mock implementation of the DelegateAccountArgs struct from delegate.rs
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize)]
@@ -27,14 +23,14 @@ struct DelegateAccountArgs {
 
 #[test]
 fn test_delegate_full_cpi() {
-    // Initialize Mollusk test environment
-    let mut mollusk = Mollusk::new(&ID, "target/deploy/pinocchio_3");
+    // Initialize Mollusk
+    let mollusk = Mollusk::new(&ID, "target/deploy/pinocchio_3");
     
     // Setup system program
     let (system_program_id, system_account) =
         mollusk_svm::program::keyed_account_for_system_program();
     
-    // Create maker account with some lamports
+    // Create maker account with lamports
     let maker = Pubkey::new_from_array([0x02; 32]);
     let maker_account = Account::new(10 * LAMPORTS_PER_SOL, 0, &system_program_id);
     
@@ -45,8 +41,8 @@ fn test_delegate_full_cpi() {
     );
     log!("Escrow bump: {}", escrow_bump);
     
-    // Create escrow account with Escrow data
-    let mut escrow_data = Vec::with_capacity(65); // Size of Escrow struct
+    // create escrow acc with escrow data + Size of escrow struct
+    let mut escrow_data = Vec::with_capacity(65);
     
     // maker pubkey (32 bytes)
     escrow_data.extend_from_slice(&maker.to_bytes());
@@ -61,7 +57,7 @@ fn test_delegate_full_cpi() {
     // bump (1 byte)
     escrow_data.push(escrow_bump);
     
-    // Create the escrow account with the prepared data
+    // create escrow acc
     let escrow_account = Account {
         lamports: mollusk.sysvars.rent.minimum_balance(escrow_data.len()),
         data: escrow_data,
@@ -70,15 +66,14 @@ fn test_delegate_full_cpi() {
         rent_epoch: 0,
     };
     
-    // Create buffer account - we'll create it ahead of time with the right owner and data
+    // create buffer acc
     let (buffer, buffer_bump) = solana_sdk::pubkey::Pubkey::find_program_address(
         &[b"buffer", &escrow.to_bytes()],
         &ID,
     );
     log!("Buffer bump: {}", buffer_bump);
     
-    // For this test, we'll pre-create the buffer account with the right data
-    // This simulates what would happen if the CreateAccount instruction succeeded
+    // create buffer acc
     let buffer_account = Account {
         lamports: mollusk.sysvars.rent.minimum_balance(65),
         data: vec![0; 65], // Pre-allocate with zeros
@@ -87,9 +82,8 @@ fn test_delegate_full_cpi() {
         rent_epoch: 0,
     };
     
-    // Create delegation record and metadata accounts
-    // These accounts would normally be created by the delegation program
-    // For our test, we'll pre-create them with the right structure
+    // create delegation record and metadata acc
+    // these acc would normally be created by delegation prog
     let delegation_record = Pubkey::new_from_array([0x07; 32]);
     let delegation_record_account = Account {
         lamports: 1 * LAMPORTS_PER_SOL,
@@ -102,24 +96,23 @@ fn test_delegate_full_cpi() {
     let delegation_metadata = Pubkey::new_from_array([0x08; 32]);
     let delegation_metadata_account = Account {
         lamports: 1 * LAMPORTS_PER_SOL,
-        data: vec![0; 65], // Pre-allocate with zeros
-        owner: DELEGATION_ACCOUNT, // Set the owner to the delegation account program
+        data: vec![0; 65], // pre-alloc with zeros
+        owner: DELEGATION_ACCOUNT,
         executable: false,
         rent_epoch: 0,
     };
     
-    // Create a custom delegation program account that will handle the CPI
-    // This is our mock implementation of the delegation account program
+    // create delegation prog acc to do the CPI. executable = true
     let delegation_program_account = Account {
         lamports: 1 * LAMPORTS_PER_SOL,
         data: vec![],
         owner: bpf_loader::ID,
-        executable: true, // This is important for it to be recognized as a program
+        executable: true,
         rent_epoch: 0,
     };
     
-    // Register a custom handler for the delegation account program
-    // This simulates what the delegation program would do when called
+    // register custom handler for delegation prog
+    // simulate delegation prog
     let mut account_map = HashMap::new();
     account_map.insert(maker, maker_account.clone());
     account_map.insert(escrow, escrow_account.clone());
@@ -129,11 +122,11 @@ fn test_delegate_full_cpi() {
     account_map.insert(system_program_id, system_account.clone());
     account_map.insert(DELEGATION_ACCOUNT, delegation_program_account.clone());
     
-    // Create a mock program account for our main program
+    // create mock prog acc for main program
     let program_account = Account {
         lamports: 1 * LAMPORTS_PER_SOL,
         data: vec![],
-        owner: bpf_loader::ID,  // Use the BPF loader as owner
+        owner: bpf_loader::ID,  // BPF loader is owner
         executable: true,
         rent_epoch: 0,
     };
@@ -149,7 +142,7 @@ fn test_delegate_full_cpi() {
         vec![
             AccountMeta::new(maker, true),
             AccountMeta::new(escrow, false),
-            AccountMeta::new_readonly(ID, false),  // magic account (program id)
+            AccountMeta::new_readonly(ID, false),  // program id in lib.rs
             AccountMeta::new(buffer, false),
             AccountMeta::new(delegation_record, false),
             AccountMeta::new_readonly(delegation_metadata, false),
@@ -157,9 +150,7 @@ fn test_delegate_full_cpi() {
         ],
     );
     
-    // Process the instruction
-    // Since we've pre-allocated all the accounts with the right owners and data,
-    // the program should be able to make progress until it tries to do the CPI
+    // attempt the CPI
     let result = mollusk.process_instruction(
         &instruction,
         &vec![
@@ -174,33 +165,28 @@ fn test_delegate_full_cpi() {
         ],
     );
     
-    // Check the result
+    // check result
     if result.raw_result.is_err() {
-        // We expect an error because we can't fully mock the CPI
         log!("Got expected error from CPI");
-        
-        // Even though the CPI failed, we can still verify that the program made progress
-        // by checking the compute units consumed
         log!("Compute units consumed: {}", result.compute_units_consumed);
         
-        // We can verify that the program attempted to create the buffer account
-        // and potentially made a CPI call by examining the resulting accounts
+        // even though error,examine resulting accounts
         for (account_key, account) in &result.resulting_accounts {
             if account_key == &buffer {
-                log!("Buffer account was modified during test");
+                log!("Buffer account modified during test");
             }
             if account_key == &delegation_record {
-                log!("Delegation record account was modified during test");
+                log!("Delegation record account modified during test");
             }
         }
     } else {
-        // If it succeeds, that's also fine - it means our mock was good enough
-        log!("Instruction executed successfully with our mock delegation program");
+        // If it succeeds, then congrats :)
+        log!("Instruction executed successfully with mock delegation program");
         
-        // We can examine the resulting accounts to see what changed
+        // examine resulting accounts
         for (account_key, account) in &result.resulting_accounts {
             if account_key == &buffer {
-                log!("Buffer account was modified during test");
+                log!("Buffer account modified during test");
             }
             if account_key == &escrow {
                 if account.owner == DELEGATION_ACCOUNT {
@@ -210,7 +196,6 @@ fn test_delegate_full_cpi() {
         }
     }
     
-    // The important thing is that we got past the system program call to create the buffer account
-    // and made it to the CPI call to the delegation program
+    // The important thing is to reach cpi call
     log!("Test passed: The program processed the delegate instruction and attempted the CPI");
 }
