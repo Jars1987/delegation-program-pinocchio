@@ -1,5 +1,4 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use bytemuck::{from_bytes, Pod, Zeroable};
 use pinocchio::{
     account_info::AccountInfo,
     cpi::invoke_signed,
@@ -9,7 +8,6 @@ use pinocchio::{
     sysvars::{rent::Rent, Sysvar},
     ProgramResult,
 };
-use pinocchio_log::log;
 
 use crate::{
     error::MyProgramError,
@@ -35,8 +33,8 @@ impl Default for DelegateAccountArgs {
 pub const DELEGATION_ACCOUNT: Pubkey =
     pinocchio_pubkey::pubkey!("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 
-pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
-    let [maker, pda_acc, magic_acc, buffer_acc, delegation_record, delegation_metadata, system_program] =
+pub fn process_delegate(accounts: &[AccountInfo]) -> ProgramResult {
+    let [maker, pda_acc, magic_acc, buffer_acc, delegation_record, delegation_metadata, system_program, _rest @ ..] =
         accounts
     else {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -45,8 +43,8 @@ pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult 
     //get buffer seeds
     let buffer_seeds: &[&[u8]] = &[b"buffer", pda_acc.key().as_ref()];
     let escrow_seeds = &["escrow".as_bytes(), maker.key().as_ref()];
-    let delegation_rec_seeds = &[b"delegation", delegation_record.key().as_ref()];
-    let delegation_met_seeds = &[b"delegation-metadata", delegation_metadata.key().as_ref()];
+    // let delegation_rec_seeds = &[b"delegation", delegation_record.key().as_ref()];
+    //let delegation_met_seeds = &[b"delegation-metadata", delegation_metadata.key().as_ref()];
 
     //find pdas
     let (_, delegate_account_bump) = pubkey::find_program_address(escrow_seeds, &crate::ID);
@@ -133,8 +131,8 @@ pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult 
 
     //seriliaze the args
     let mut data: Vec<u8> = vec![0u8; 8];
-    let serialized_seeds = borsh::to_vec(&delegate_args)
-    .map_err(|e| MyProgramError::SerializationFailed)?;
+    let serialized_seeds =
+        borsh::to_vec(&delegate_args).map_err(|_| MyProgramError::SerializationFailed)?;
     data.extend_from_slice(&serialized_seeds);
 
     //call Instruction
@@ -154,6 +152,6 @@ pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult 
         system_program,
     ];
 
-    invoke_signed(&instruction, &acc_infos, &[pda_signer_seeds]);
+    invoke_signed(&instruction, &acc_infos, &[pda_signer_seeds])?;
     Ok(())
 }
