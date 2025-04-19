@@ -3,7 +3,7 @@ use pinocchio::{
     program_error::ProgramError, pubkey::Pubkey, ProgramResult,
 };
 
-use crate::instruction::{self, MyProgramInstrution};
+use crate::instruction::{self, DelegateProgram};
 
 // This is the entrypoint for the program.
 program_entrypoint!(process_instruction);
@@ -22,7 +22,8 @@ fn process_instruction(
         .split_first()
         .ok_or(ProgramError::InvalidInstructionData)?;
 
-    match MyProgramInstrution::try_from(ix_disc)? {
-        MyProgramInstrution::Delegate => instruction::process_delegate(accounts, instruction_data),
+    match DelegateProgram::try_from(ix_disc)? {
+        DelegateProgram::Delegate => instruction::process_delegate(accounts, instruction_data),
+        DelegateProgram::Undelegate => instruction::process_undelegate(accounts, instruction_data),
     }
 }

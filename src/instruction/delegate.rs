@@ -9,7 +9,9 @@ use pinocchio::{
 
 use crate::{
     consts::{BUFFER, DELEGATION_PROGRAM_ID},
-    state::{close_pda_acc, cpi_delegate, deserialize_ix_data, get_seeds, DelegateAccountArgs},
+    state::{
+        close_pda_acc, cpi_delegate, deserialize_delegate_ix_data, get_seeds, DelegateAccountArgs,
+    },
 };
 
 pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
@@ -19,7 +21,11 @@ pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult 
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
-    let (seeds_data, config) = deserialize_ix_data(data)?;
+    if !payer.is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    let (seeds_data, config) = deserialize_delegate_ix_data(data)?;
 
     //Clone is unavoidable fore now
     let delegate_pda_seeds = seeds_data.clone();

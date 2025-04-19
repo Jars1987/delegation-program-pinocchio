@@ -170,7 +170,9 @@ pub fn serialize_delegate_account_args(args: &DelegateAccountArgs) -> Vec<u8> {
 //Deserialize data using borsh and some assumptions
 //we need the array length descriminator and another
 //descriminator for the length of the inner arrays
-pub fn deserialize_ix_data(ix_data: &[u8]) -> Result<(Vec<Vec<u8>>, DelegateConfig), ProgramError> {
+pub fn deserialize_delegate_ix_data(
+    ix_data: &[u8],
+) -> Result<(Vec<Vec<u8>>, DelegateConfig), ProgramError> {
     let mut offset = 0;
 
     // First byte provides total number of seeds
@@ -202,6 +204,36 @@ pub fn deserialize_ix_data(ix_data: &[u8]) -> Result<(Vec<Vec<u8>>, DelegateConf
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
     Ok((seeds, config))
+}
+
+pub fn deserialize_undelegate_ix_data(ix_data: &[u8]) -> Result<Vec<Vec<u8>>, ProgramError> {
+    let mut offset = 0;
+
+    // First byte provides total number of seeds
+    if ix_data.len() < 1 {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let num_seeds = ix_data[0] as usize;
+    offset += 1;
+
+    // Extract the seeds
+    let mut seeds = Vec::with_capacity(num_seeds);
+
+    for _ in 0..num_seeds {
+        if ix_data.len() < offset + 1 {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        //first byte is out seed length
+        let seed_len = ix_data[offset] as usize;
+        offset += 1;
+
+        let seed = ix_data[offset..offset + seed_len].to_vec();
+        seeds.push(seed);
+        offset += seed_len;
+    }
+
+    Ok(seeds)
 }
 
 #[inline(always)]
@@ -244,9 +276,6 @@ pub fn close_pda_acc(
 
     Ok(())
 }
-
-//let delegation_rec_seeds = &[b"delegation", delegation_record.key().as_ref()];
-//let delegation_met_seeds = &[b"delegation-metadata", delegation_metadata.key().as_ref()];
 
 pub fn cpi_delegate(
     payer: &AccountInfo,
