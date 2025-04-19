@@ -1,66 +1,45 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use pinocchio::{
     account_info::AccountInfo,
-    cpi::invoke_signed,
-    instruction::{AccountMeta, Instruction, Seed, Signer},
+    instruction::{Seed, Signer},
     program_error::ProgramError,
-    pubkey::{self, Pubkey},
+    pubkey,
     sysvars::{rent::Rent, Sysvar},
     ProgramResult,
 };
 
 use crate::{
-    error::MyProgramError,
-    state::{DataLen, Escrow},
+    consts::{BUFFER, DELEGATION_PROGRAM_ID},
+    state::{close_pda_acc, cpi_delegate, deserialize_ix_data, get_seeds, DelegateAccountArgs},
 };
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct DelegateAccountArgs {
-    pub commit_frequency_ms: u32,
-    pub seeds: Vec<Vec<u8>>,
-    pub validator: Option<Pubkey>,
-}
 
-impl Default for DelegateAccountArgs {
-    fn default() -> Self {
-        DelegateAccountArgs {
-            commit_frequency_ms: u32::MAX,
-            seeds: vec![],
-            validator: None,
-        }
-    }
-}
-
-pub const DELEGATION_ACCOUNT: Pubkey =
-    pinocchio_pubkey::pubkey!("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
-
-pub fn process_delegate(accounts: &[AccountInfo]) -> ProgramResult {
-    let [maker, pda_acc, magic_acc, buffer_acc, delegation_record, delegation_metadata, system_program, _rest @ ..] =
+pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let [payer, pda_acc, owner_program, buffer_acc, delegation_record, delegation_metadata, system_program, _rest @ ..] =
         accounts
     else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
+    let (seeds_data, config) = deserialize_ix_data(data)?;
+
+    //Clone is unavoidable fore now
+    let delegate_pda_seeds = seeds_data.clone();
+
     //get buffer seeds
-    let buffer_seeds: &[&[u8]] = &[b"buffer", pda_acc.key().as_ref()];
-    let escrow_seeds = &["escrow".as_bytes(), maker.key().as_ref()];
-    // let delegation_rec_seeds = &[b"delegation", delegation_record.key().as_ref()];
-    //let delegation_met_seeds = &[b"delegation-metadata", delegation_metadata.key().as_ref()];
+    let buffer_seeds: &[&[u8]] = &[BUFFER, pda_acc.key().as_ref()];
+    let pda_seeds: Vec<&[u8]> = seeds_data.iter().map(|s| s.as_slice()).collect();
 
-    //find pdas
-    let (_, delegate_account_bump) = pubkey::find_program_address(escrow_seeds, &crate::ID);
-
+    //Find pdas
+    let (_, delegate_account_bump) = pubkey::find_program_address(&pda_seeds, &crate::ID);
     let (_, buffer_pda_bump) = pubkey::find_program_address(buffer_seeds, &crate::ID);
 
-    //get signer seeds
+    //Get Delegated Pda Signer Seeds
+    let binding = &[delegate_account_bump];
+    let delegate_bump = Seed::from(binding);
+    let mut delegate_seeds = get_seeds(pda_seeds)?;
+    delegate_seeds.extend_from_slice(&[delegate_bump]);
+    let delegate_signer_seeds = Signer::from(delegate_seeds.as_slice());
 
-    let bump = [delegate_account_bump];
-    let seed_a = [
-        Seed::from(b"escrow"),
-        Seed::from(maker.key().as_ref()),
-        Seed::from(&bump),
-    ];
-    let pda_signer_seeds = Signer::from(&seed_a);
-
+    //Get Buffer signer seeds
     let bump = [buffer_pda_bump];
     let seed_b = [
         Seed::from(b"buffer"),
@@ -70,11 +49,12 @@ pub fn process_delegate(accounts: &[AccountInfo]) -> ProgramResult {
 
     let buffer_signer_seeds = Signer::from(&seed_b);
 
+    //Create Buffer PDA account
     pinocchio_system::instructions::CreateAccount {
-        from: maker,
+        from: payer,
         to: buffer_acc,
-        lamports: Rent::get()?.minimum_balance(Escrow::LEN),
-        space: Escrow::LEN as u64, //PDA acc length
+        lamports: Rent::get()?.minimum_balance(pda_acc.data_len()),
+        space: pda_acc.data_len() as u64, //PDA acc length
         owner: &crate::ID,
     }
     .invoke_signed(&[buffer_signer_seeds.clone()])?;
@@ -85,73 +65,40 @@ pub fn process_delegate(accounts: &[AccountInfo]) -> ProgramResult {
     (*buffer_data).copy_from_slice(&new_data);
     drop(buffer_data);
 
-    //acc needs to be closed to be delagated
-
-    //zeroed lamports
-    unsafe {
-        *maker.borrow_mut_lamports_unchecked() += *pda_acc.borrow_lamports_unchecked();
-        *pda_acc.borrow_mut_lamports_unchecked() = 0
-    };
-
-    //empty data
-    pda_acc.realloc(0, false).unwrap();
-    //send to System Program
-    unsafe { pda_acc.assign(system_program.key()) };
+    //Close Delegate PDA in preparation for CPI Delegate
+    close_pda_acc(payer, pda_acc, system_program)?;
 
     //we create account with Delegation Account
     pinocchio_system::instructions::CreateAccount {
-        from: maker,
+        from: payer,
         to: pda_acc,
-        lamports: Rent::get()?.minimum_balance(Escrow::LEN),
-        space: Escrow::LEN as u64, //PDA acc length
-        owner: &DELEGATION_ACCOUNT,
+        lamports: Rent::get()?.minimum_balance(pda_acc.data_len()),
+        space: pda_acc.data_len() as u64, //PDA acc length
+        owner: &DELEGATION_PROGRAM_ID,
     }
-    .invoke_signed(&[buffer_signer_seeds])?;
-
-    let account_metas = vec![
-        AccountMeta::new(maker.key(), true, true),
-        AccountMeta::new(pda_acc.key(), true, false),
-        AccountMeta::readonly(&crate::ID),
-        AccountMeta::new(buffer_acc.key(), false, false),
-        AccountMeta::new(delegation_record.key(), true, false),
-        AccountMeta::readonly(delegation_metadata.key()),
-        AccountMeta::readonly(system_program.key()),
-    ];
-
-    //args are the DelegateAccountArgs serialized
+    .invoke_signed(&[delegate_signer_seeds.clone()])?;
 
     //preprare delegate args
-    let seeds_vec: Vec<Vec<u8>> = escrow_seeds.iter().map(|&slice| slice.to_vec()).collect();
-
+    //struct DelegateConfig comes from IX data
     let delegate_args = DelegateAccountArgs {
-        commit_frequency_ms: 30_000,
-        seeds: seeds_vec,
-        validator: None,
+        commit_frequency_ms: config.commit_frequency_ms,
+        seeds: delegate_pda_seeds,
+        validator: config.validator,
     };
 
-    //seriliaze the args
-    let mut data: Vec<u8> = vec![0u8; 8];
-    let serialized_seeds =
-        borsh::to_vec(&delegate_args).map_err(|_| MyProgramError::SerializationFailed)?;
-    data.extend_from_slice(&serialized_seeds);
-
-    //call Instruction
-    let instruction = Instruction {
-        program_id: &DELEGATION_ACCOUNT,
-        accounts: &account_metas,
-        data: &data,
-    };
-
-    let acc_infos = [
-        maker,
+    cpi_delegate(
+        payer,
         pda_acc,
-        magic_acc,
+        owner_program,
         buffer_acc,
         delegation_record,
         delegation_metadata,
         system_program,
-    ];
+        delegate_args,
+        delegate_signer_seeds,
+    )?;
 
-    invoke_signed(&instruction, &acc_infos, &[pda_signer_seeds])?;
+    close_pda_acc(payer, buffer_acc, system_program)?;
+
     Ok(())
 }

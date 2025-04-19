@@ -6,6 +6,7 @@ mod entrypoint;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod consts;
 mod error;
 mod instruction;
 mod state;

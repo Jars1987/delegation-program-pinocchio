@@ -23,9 +23,6 @@ fn process_instruction(
         .ok_or(ProgramError::InvalidInstructionData)?;
 
     match MyProgramInstrution::try_from(ix_disc)? {
-        MyProgramInstrution::Make => instruction::process_make(accounts, instruction_data),
-        MyProgramInstrution::Take => instruction::process_take(accounts),
-        MyProgramInstrution::Refund => instruction::process_refund(accounts),
-        MyProgramInstrution::Delegate => instruction::process_delegate(accounts),
+        MyProgramInstrution::Delegate => instruction::process_delegate(accounts, instruction_data),
     }
 }

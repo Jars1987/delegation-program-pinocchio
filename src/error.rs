@@ -17,6 +17,7 @@ pub enum MyProgramError {
     //Unable to Serialize
     SerializationFailed,
     FailedRealloc,
+    InvalidIxData,
 }
 
 impl From<MyProgramError> for ProgramError {

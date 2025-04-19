@@ -1,20 +1,11 @@
 pub mod delegate;
-pub mod make;
-pub mod refund;
-pub mod take;
 
 pub use delegate::*;
-pub use make::*;
-pub use refund::*;
-pub use take::*;
 
 use pinocchio::program_error::ProgramError;
 
 #[repr(u8)]
 pub enum MyProgramInstrution {
-    Make,
-    Take,
-    Refund,
     Delegate,
 }
 
@@ -23,10 +14,7 @@ impl TryFrom<&u8> for MyProgramInstrution {
 
     fn try_from(value: &u8) -> Result<Self, Self::Error> {
         match *value {
-            0 => Ok(MyProgramInstrution::Make),
-            1 => Ok(MyProgramInstrution::Take),
-            2 => Ok(MyProgramInstrution::Refund),
-            3 => Ok(MyProgramInstrution::Delegate),
+            0 => Ok(MyProgramInstrution::Delegate),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }
