@@ -1,126 +1,21 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 use bytemuck::from_bytes;
-use core::mem::MaybeUninit;
 use pinocchio::{
     account_info::AccountInfo,
     cpi::invoke_signed,
     instruction::{AccountMeta, Instruction, Seed, Signer},
     program_error::ProgramError,
-    pubkey::Pubkey,
+    pubkey::PUBKEY_BYTES,
 };
 
-use crate::{consts::DELEGATION_PROGRAM_ID, error::MyProgramError};
-
-pub trait DataLen {
-    const LEN: usize;
-}
-
-pub trait Initialized {
-    fn is_initialized(&self) -> bool;
-}
-
-#[inline(always)]
-pub fn load_acc<T: DataLen + Initialized>(bytes: &[u8]) -> Result<&T, ProgramError> {
-    load_acc_unchecked::<T>(bytes).and_then(|acc| {
-        if acc.is_initialized() {
-            Ok(acc)
-        } else {
-            Err(ProgramError::UninitializedAccount)
-        }
-    })
-}
-
-#[inline(always)]
-pub fn load_acc_unchecked<T: DataLen>(bytes: &[u8]) -> Result<&T, ProgramError> {
-    if bytes.len() != T::LEN {
-        return Err(ProgramError::InvalidAccountData);
-    }
-    Ok(unsafe { &*(bytes.as_ptr() as *const T) })
-}
-
-#[inline(always)]
-pub fn load_acc_mut<T: DataLen + Initialized>(bytes: &mut [u8]) -> Result<&mut T, ProgramError> {
-    load_acc_mut_unchecked::<T>(bytes).and_then(|acc| {
-        if acc.is_initialized() {
-            Ok(acc)
-        } else {
-            Err(ProgramError::UninitializedAccount)
-        }
-    })
-}
-
-#[inline(always)]
-pub fn load_acc_mut_unchecked<T: DataLen>(bytes: &mut [u8]) -> Result<&mut T, ProgramError> {
-    if bytes.len() != T::LEN {
-        return Err(ProgramError::InvalidAccountData);
-    }
-    Ok(unsafe { &mut *(bytes.as_mut_ptr() as *mut T) })
-}
-
-#[inline(always)]
-pub fn load_ix_data<T: DataLen>(bytes: &[u8]) -> Result<&T, ProgramError> {
-    if bytes.len() != T::LEN {
-        return Err(MyProgramError::InvalidInstructionData.into());
-    }
-    Ok(unsafe { &*(bytes.as_ptr() as *const T) })
-}
-
-pub fn to_bytes<T: DataLen>(data: &T) -> &[u8] {
-    unsafe { core::slice::from_raw_parts(data as *const T as *const u8, T::LEN) }
-}
-
-pub fn to_mut_bytes<T: DataLen>(data: &mut T) -> &mut [u8] {
-    unsafe { core::slice::from_raw_parts_mut(data as *mut T as *mut u8, T::LEN) }
-}
-
-//Create close_pda, close_pda_with_system_transfer, create_pda, seeds_with_bump
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct DelegateAccountArgs {
-    pub commit_frequency_ms: u32,
-    pub seeds: Vec<Vec<u8>>,
-    pub validator: Option<Pubkey>,
-}
-
-impl Default for DelegateAccountArgs {
-    fn default() -> Self {
-        DelegateAccountArgs {
-            commit_frequency_ms: u32::MAX,
-            seeds: vec![],
-            validator: None,
-        }
-    }
-}
-
-//why do need lifetimes here?
-pub struct DelegateAccounts<'a> {
-    pub payer: &'a AccountInfo,
-    pub pda: &'a AccountInfo,
-    pub owner_program: &'a AccountInfo,
-    pub buffer: &'a AccountInfo,
-    pub delegation_record: &'a AccountInfo,
-    pub delegation_metadata: &'a AccountInfo,
-    pub delegation_program: &'a AccountInfo,
-    pub system_program: &'a AccountInfo,
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct DelegateConfig {
-    pub commit_frequency_ms: u32,
-    pub validator: Option<Pubkey>,
-}
-
-impl Default for DelegateConfig {
-    fn default() -> Self {
-        DelegateConfig {
-            commit_frequency_ms: DelegateAccountArgs::default().commit_frequency_ms,
-            validator: DelegateAccountArgs::default().validator,
-        }
-    }
-}
+use crate::{
+    consts::DELEGATION_PROGRAM_ID,
+    error::MyProgramError,
+    types::{DelegateAccountArgs, DelegateConfig},
+};
 
 //helper to deserialize using bytemuck
-pub fn parse_delegate_config(data: &[u8]) -> Result<DelegateConfig, ProgramError> {
+pub fn _parse_delegate_config(data: &[u8]) -> Result<DelegateConfig, ProgramError> {
     if data.len() < 4 {
         return Err(MyProgramError::SerializationFailed.into());
     }
@@ -248,15 +143,6 @@ pub fn get_seeds<'a>(seeds_vec: Vec<&'a [u8]>) -> Result<Vec<Seed<'a>>, ProgramE
     Ok(seeds)
 }
 
-/// Seeds with bump
-#[inline(always)]
-pub fn seeds_with_bump<'a>(seeds: &'a [&'a [u8]], bump: &'a [u8]) -> Vec<&'a [u8]> {
-    let mut combined: Vec<&'a [u8]> = Vec::with_capacity(seeds.len() + 1);
-    combined.extend_from_slice(seeds);
-    combined.push(bump);
-    combined
-}
-
 pub fn close_pda_acc(
     payer: &AccountInfo,
     pda_acc: &AccountInfo,
@@ -319,4 +205,39 @@ pub fn cpi_delegate(
 
     invoke_signed(&instruction, &acc_infos, &[signer_seeds])?;
     Ok(())
+}
+
+pub struct CommitIx<'a> {
+    pub program_id: &'a [u8; PUBKEY_BYTES],
+    pub data: Vec<u8>,
+    pub accounts: Vec<AccountMeta<'a>>,
+}
+
+pub fn create_schedule_commit_ix<'a>(
+    payer: &'a AccountInfo,
+    account_infos: &'a [AccountInfo],
+    magic_context: &'a AccountInfo,
+    magic_program: &'a AccountInfo,
+    allow_undelegation: bool,
+) -> CommitIx<'a> {
+    let instruction_data: Vec<u8> = if allow_undelegation {
+        vec![2, 0, 0, 0]
+    } else {
+        vec![1, 0, 0, 0]
+    };
+    let mut account_metas = vec![
+        AccountMeta::new(payer.key(), true, true),
+        AccountMeta::new(magic_context.key(), true, false),
+    ];
+    account_metas.extend(
+        account_infos
+            .iter()
+            .map(|acc| AccountMeta::new(acc.key(), true, true)),
+    );
+    let instruction = CommitIx {
+        program_id: magic_program.key(),
+        data: instruction_data,
+        accounts: account_metas,
+    };
+    instruction
 }

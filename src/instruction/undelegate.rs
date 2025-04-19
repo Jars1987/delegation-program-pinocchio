@@ -7,7 +7,7 @@ use pinocchio::{
     ProgramResult,
 };
 
-use crate::state::{deserialize_undelegate_ix_data, get_seeds};
+use crate::utils::{deserialize_undelegate_ix_data, get_seeds};
 
 pub fn process_undelegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
     let [payer, delegated_acc, owner_program, buffer_acc, _system_program, _rest @ ..] = accounts

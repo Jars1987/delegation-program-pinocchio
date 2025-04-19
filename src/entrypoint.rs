@@ -25,5 +25,9 @@ fn process_instruction(
     match DelegateProgram::try_from(ix_disc)? {
         DelegateProgram::Delegate => instruction::process_delegate(accounts, instruction_data),
         DelegateProgram::Undelegate => instruction::process_undelegate(accounts, instruction_data),
+        DelegateProgram::CommitAccounts => instruction::process_commit_accounts(accounts),
+        DelegateProgram::CommitAndUndelegateAccounts => {
+            instruction::process_commit_and_undelegate_accounts(accounts)
+        }
     }
 }

@@ -9,9 +9,8 @@ use pinocchio::{
 
 use crate::{
     consts::{BUFFER, DELEGATION_PROGRAM_ID},
-    state::{
-        close_pda_acc, cpi_delegate, deserialize_delegate_ix_data, get_seeds, DelegateAccountArgs,
-    },
+    types::DelegateAccountArgs,
+    utils::{close_pda_acc, cpi_delegate, deserialize_delegate_ix_data, get_seeds},
 };
 
 pub fn process_delegate(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
