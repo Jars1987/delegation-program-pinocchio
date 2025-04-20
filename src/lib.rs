@@ -9,7 +9,6 @@ extern crate std;
 mod consts;
 mod error;
 mod instruction;
-mod tests;
 mod types;
 mod utils;
 
