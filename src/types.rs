@@ -1,7 +1,6 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use pinocchio::pubkey::Pubkey;
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug)]
 pub struct DelegateAccountArgs {
     pub commit_frequency_ms: u32,
     pub seeds: Vec<Vec<u8>>,
@@ -18,7 +17,6 @@ impl Default for DelegateAccountArgs {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
 pub struct DelegateConfig {
     pub commit_frequency_ms: u32,
     pub validator: Option<Pubkey>,

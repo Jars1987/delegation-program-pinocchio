@@ -1,4 +1,3 @@
-use borsh::BorshDeserialize;
 use bytemuck::from_bytes;
 use pinocchio::{
     account_info::AccountInfo,
@@ -15,7 +14,7 @@ use crate::{
 };
 
 //helper to deserialize using bytemuck
-pub fn _parse_delegate_config(data: &[u8]) -> Result<DelegateConfig, ProgramError> {
+pub fn parse_delegate_config(data: &[u8]) -> Result<DelegateConfig, ProgramError> {
     if data.len() < 4 {
         return Err(MyProgramError::SerializationFailed.into());
     }
@@ -95,8 +94,7 @@ pub fn deserialize_delegate_ix_data(
     }
 
     // Borsh Deserialize DelegateConfig (we might change this to bytemuck see parse_delegate_config)
-    let config = DelegateConfig::try_from_slice(&ix_data[offset..])
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    let config = parse_delegate_config(&ix_data[offset..])?;
 
     Ok((seeds, config))
 }

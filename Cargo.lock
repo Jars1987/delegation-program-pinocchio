@@ -1817,7 +1817,6 @@ checksum = "530596fa307103e53257f2cf064815919ee7fbc4c7ab999f6f13cc7067c3aff1"
 name = "pinocchio-3"
 version = "0.1.0"
 dependencies = [
- "borsh 1.5.7",
  "bytemuck",
  "mollusk-svm",
  "pinocchio",
