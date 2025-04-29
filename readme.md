@@ -48,10 +48,9 @@ cargo build-sbf
 
 ### Run Tests
 
-``bash
+```bash
 cargo test
-````
---
+```
 
 ## 🔍 Inspired By
 This project is a Pinocchio-based reimplementation of:
