@@ -13,7 +13,6 @@ pinocchio-pubkey = "0.2.4"
 pinocchio-system = "0.2.3"
 pinocchio-token = "0.3.0"
 bytemuck = { version = "1.19.0", features = ["derive" , "const_zeroed"] }
-borsh = { version = "1.5.7", features = ["derive"] }
 
 [dev-dependencies]
 solana-sdk = "2.1.0"
